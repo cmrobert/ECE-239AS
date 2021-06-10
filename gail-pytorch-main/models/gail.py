@@ -212,7 +212,11 @@ class GAIL:
 
             if normalize_advantage:
                 advs = (advs - advs.mean()) / advs.std()
-            
+                
+                
+            if torch.cuda.is_available():
+                advs.to(torch.device("cuda:0"))    
+           
             self.d.train()
             exp_scores = self.d.get_logits(exp_obs, exp_acts)
             nov_scores = self.d.get_logits(obs, acts)
@@ -260,15 +264,7 @@ class GAIL:
 
             def L():
                 distb = self.pi(obs)
-                device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-                '''
-                print(distb.log_prob(acts).device)
-                print(old_distb.log_prob(acts).device)
-                print((distb.log_prob(acts)- old_distb.log_prob(acts).detach()).device)
-                print(torch.exp(distb.log_prob(acts)- old_distb.log_prob(acts).detach()).device)
-                print(advs.device)
-                print(advs * torch.exp(distb.log_prob(acts)- old_distb.log_prob(acts).detach()).mean().device)
-                '''
+                
                 return (advs.to(self.device) * torch.exp(
                             distb.log_prob(acts)
                             - old_distb.log_prob(acts).detach()
