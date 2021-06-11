@@ -1,7 +1,7 @@
 import torch
 from argparse import Namespace
+import numpy as np
 from reinforcement_learning.dddqn_policy import DDDQNPolicy
-from utils.observation_utils import normalize_observation
 
 if torch.cuda.is_available():
     from torch.cuda import FloatTensor
@@ -129,9 +129,6 @@ class Expert:
                 'hidden_size': 256,
                 'use_gpu': True
             }
-            # Observation parameters
-            self.observation_tree_depth = 2
-            self.observation_radius = 10
             # Actual policy
             self.pi = DDDQNPolicy(self.state_dim, self.action_dim, 
                                   Namespace(**training_parameters), evaluation_mode=False) #evaluation_mode=True)
@@ -149,10 +146,9 @@ class Expert:
     def act(self, state):
         if self.expert_algo == "dddqn":
             self.pi.qnetwork_local.eval()
-            state = normalize_observation(state, self.observation_tree_depth,
-                                          observation_radius=self.observation_radius)
-            state = torch.from_numpy(state).float().unsqueeze(0).to(self.device)
+            state = torch.from_numpy(state).float().unsqueeze(0).to(torch.device("cpu"))
             distb = self.pi.qnetwork_local(state)
+            action = np.argmax(distb.cpu().data.numpy())
         elif self.expert_algo == "default":
             self.pi.eval()
             state = FloatTensor(state)
@@ -160,6 +156,6 @@ class Expert:
 
         
 
-        action = distb.sample().detach().cpu().numpy()
+            action = distb.sample().detach().cpu().numpy()
 
         return action

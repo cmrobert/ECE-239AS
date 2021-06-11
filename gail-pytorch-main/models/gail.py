@@ -4,6 +4,7 @@ import torch
 from models.nets import PolicyNetwork, ValueNetwork, Discriminator
 from utils.funcs import get_flat_grads, get_flat_params, set_params, \
     conjugate_gradient, rescale_and_linesearch
+from utils.observation_utils import normalize_observation
 
 if torch.cuda.is_available():
     from torch.cuda import FloatTensor
@@ -38,6 +39,9 @@ class GAIL:
         self.env_type = "flatland"
         self.regenerate_rail=True
         self.regenerate_schedule=True
+        # Observation parameters
+        self.observation_tree_depth = 2
+        self.observation_radius = 10
 
     def get_networks(self):
         return [self.pi, self.v]
@@ -64,6 +68,17 @@ class GAIL:
         cg_damping = self.train_config["cg_damping"]
         normalize_advantage = self.train_config["normalize_advantage"]
 
+        # Flatland Environment parameters
+        n_agents = 1
+        x_dim = 25
+        y_dim = 25
+        n_cities = 4
+        max_rails_between_cities = 2
+        max_rails_in_city = 3
+        seed = 42
+        max_steps = int(4 * 2 * (env.height + env.width + (n_agents / n_cities)))
+
+        agent_obs = [None] * env.get_num_agents()
         opt_d = torch.optim.Adam(self.d.parameters())
 
         exp_rwd_iter = []
@@ -75,20 +90,29 @@ class GAIL:
         while steps < num_steps_per_iter:
             ep_obs = []
             ep_rwds = []
+            action_dict = dict()
 
             t = 0
             done = False
 
             if self.env_type == "flatland":
-                ob_all = env.reset(self.regenerate_rail, self.regenerate_schedule)
+                ob_all, info = env.reset(self.regenerate_rail, self.regenerate_schedule)
                 for agent in env.get_agent_handles():
                     if ob_all[agent]:
-                        ob = ob_all[agent]
+                        agent_obs[agent] = normalize_observation(ob_all[agent], self.observation_tree_depth,
+                                                                 observation_radius=self.observation_radius)
+                ob = agent_obs[agent]
             else:
-                ob = env.reset()
+                ob, info = env.reset()
 
             while not done and steps < num_steps_per_iter:
-                act = expert.act(ob)
+                if self.env_type == "flatland":
+                    for agent in env.get_agent_handles():
+                        if info['action_required'][agent]:
+                            act = expert.act(agent_obs[agent])
+                            action_dict.update({agent: act})
+                else:
+                    act = expert.act(ob)
 
                 ep_obs.append(ob)
                 exp_obs.append(ob)
@@ -96,7 +120,11 @@ class GAIL:
 
                 if render:
                     env.render()
-                ob, rwd, done, info = env.step(act)
+
+                if self.env_type == "flatland":
+                    ob, rwd, done, info = env.step(action_dict)
+                else:
+                    ob, rwd, done, info = env.step(act)
 
                 ep_rwds.append(rwd)
 
@@ -145,7 +173,7 @@ class GAIL:
                 done = False
 
                 if self.env_type == "flatland":
-                    ob_all = env.reset(self.regenerate_rail, self.regenerate_schedule)
+                    ob_all, info = env.reset(self.regenerate_rail, self.regenerate_schedule)
                     for agent in env.get_agent_handles():
                         if ob_all[agent]:
                             ob = ob_all[agent]
