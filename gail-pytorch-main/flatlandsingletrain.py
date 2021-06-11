@@ -123,12 +123,17 @@ def main(env_name, gpu_num):
     
     ## Trying to load expert policy here
     
+    expert_algo = "dddqn" # alternatively "default" for FC NN
     
-    
-    expert = Expert(state_dim, action_dim, discrete = False, **expert_config)
-    expert.pi.load_state_dict(torch.load(expert_ckpt_path + "sa-expert.pth"))
+    expert = Expert(state_dim, action_dim, discrete=False, **expert_config, expert_algo=expert_algo)
+    #import pdb; pdb.set_trace()
+    if expert_algo == "dddqn":
+        expert.pi.load(expert_ckpt_path + "sa-expert")
+    elif expert_algo == "default":
+        checkpt_i = torch.load(expert_ckpt_path + "sa-expert.pth")
+        expert.pi.load_state_dict(checkpt_i)
 
-    model = GAIL(state_dim, action_dim, discrete, config)
+    model = GAIL(state_dim, action_dim, discrete=False, train_config=config)
 
     
     results = model.train(env, expert)

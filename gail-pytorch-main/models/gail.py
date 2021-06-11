@@ -34,6 +34,11 @@ class GAIL:
             for net in self.get_networks():
                 net.to(torch.device("cuda"))
 
+        # Flatland Environment settings
+        self.env_type = "flatland"
+        self.regenerate_rail=True
+        self.regenerate_schedule=True
+
     def get_networks(self):
         return [self.pi, self.v]
 
@@ -74,7 +79,13 @@ class GAIL:
             t = 0
             done = False
 
-            ob = env.reset()
+            if self.env_type == "flatland":
+                ob_all = env.reset(self.regenerate_rail, self.regenerate_schedule)
+                for agent in env.get_agent_handles():
+                    if ob_all[agent]:
+                        ob = ob_all[agent]
+            else:
+                ob = env.reset()
 
             while not done and steps < num_steps_per_iter:
                 act = expert.act(ob)
@@ -133,7 +144,13 @@ class GAIL:
                 t = 0
                 done = False
 
-                ob = env.reset()
+                if self.env_type == "flatland":
+                    ob_all = env.reset(self.regenerate_rail, self.regenerate_schedule)
+                    for agent in env.get_agent_handles():
+                        if ob_all[agent]:
+                            ob = ob_all[agent]
+                else:
+                    ob = env.reset()
 
                 while not done and steps < num_steps_per_iter:
                     act = self.act(ob)

@@ -1,4 +1,7 @@
 import torch
+from argparse import Namespace
+from reinforcement_learning.dddqn_policy import DDDQNPolicy
+from utils.observation_utils import normalize_observation
 
 if torch.cuda.is_available():
     from torch.cuda import FloatTensor
@@ -103,14 +106,38 @@ class Expert:
         state_dim,
         action_dim,
         discrete,
-        train_config=None
+        train_config=None,
+        expert_algo="dddqn"
     ):
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.discrete = discrete
         self.train_config = train_config
+        self.expert_algo = expert_algo
 
-        self.pi = PolicyNetwork(self.state_dim, self.action_dim, self.discrete)
+        # Select the expert policy algorithm (current options listed below):
+        if self.expert_algo == "dddqn":
+            # Duelling Double Deep-Q Network
+            training_parameters = {            # Training parameters
+                'buffer_size': int(1e5),
+                'batch_size': 32,
+                'update_every': 8,
+                'learning_rate': 0.5e-4,
+                'tau': 1e-3,
+                'gamma': 0.99,
+                'buffer_min_size': 0,
+                'hidden_size': 256,
+                'use_gpu': True
+            }
+            # Observation parameters
+            self.observation_tree_depth = 2
+            self.observation_radius = 10
+            # Actual policy
+            self.pi = DDDQNPolicy(self.state_dim, self.action_dim, 
+                                  Namespace(**training_parameters), evaluation_mode=False) #evaluation_mode=True)
+        elif self.expert_algo == "default":
+            # Fully connected neural network policy method
+            self.pi = PolicyNetwork(self.state_dim, self.action_dim, self.discrete)
 
         if torch.cuda.is_available():
             for net in self.get_networks():
@@ -120,10 +147,18 @@ class Expert:
         return [self.pi]
 
     def act(self, state):
-        self.pi.eval()
+        if self.expert_algo == "dddqn":
+            self.pi.qnetwork_local.eval()
+            state = normalize_observation(state, self.observation_tree_depth,
+                                          observation_radius=self.observation_radius)
+            state = torch.from_numpy(state).float().unsqueeze(0).to(self.device)
+            distb = self.pi.qnetwork_local(state)
+        elif self.expert_algo == "default":
+            self.pi.eval()
+            state = FloatTensor(state)
+            distb = self.pi(state)
 
-        state = FloatTensor(state)
-        distb = self.pi(state)
+        
 
         action = distb.sample().detach().cpu().numpy()
 

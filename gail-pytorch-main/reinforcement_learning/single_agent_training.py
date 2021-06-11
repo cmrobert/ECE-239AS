@@ -176,7 +176,8 @@ def train_agent(n_episodes):
 
         if episode_idx % 100 == 0:
             end = "\n"
-            torch.save(policy.qnetwork_local, './checkpoints/single-' + str(episode_idx) + '.pth')
+            #torch.save(policy.qnetwork_local, './checkpoints/single-' + str(episode_idx) + '.pth')
+            torch.save(policy.qnetwork_local.state_dict(), './checkpoints/single-' + str(episode_idx) + '.pth')
             action_count = [1] * action_size
         else:
             end = " "
@@ -191,7 +192,9 @@ def train_agent(n_episodes):
                 eps_start,
                 action_probs
             ), end=end)
-    torch.save(policy.qnetwork_local, './checkpoints/sa-expert.pth')
+    #torch.save(policy.qnetwork_local, './checkpoints/sa-expert.pth')
+    torch.save(policy.qnetwork_local.state_dict(), './checkpoints/sa-expert.pth')
+    policy.save('./checkpoints/sa-expert')
     # Plot overall training progress at the end
     plt.plot(scores)
     plt.show()
