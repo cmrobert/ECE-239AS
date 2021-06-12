@@ -92,10 +92,14 @@ class Discriminator(torch.nn.Module):
         return torch.sigmoid(self.get_logits(states, actions))
 
     def get_logits(self, states, actions):
+        #import pdb; pdb.set_trace()
+        # Actions need to be in one-hot format (not index format)
+        actions_oh = torch.nn.functional.one_hot(actions.to(torch.int64), self.action_dim)
+
         if self.discrete:
             actions = self.act_emb(actions.long())
 
-        sa = torch.cat([states, actions], dim=-1)
+        sa = torch.cat([states, actions_oh], dim=-1)
 
         return self.net(sa)
 
@@ -114,6 +118,9 @@ class Expert:
         self.discrete = discrete
         self.train_config = train_config
         self.expert_algo = expert_algo
+
+        # Determine the device to use
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # Select the expert policy algorithm (current options listed below):
         if self.expert_algo == "dddqn":
@@ -146,7 +153,7 @@ class Expert:
     def act(self, state):
         if self.expert_algo == "dddqn":
             self.pi.qnetwork_local.eval()
-            state = torch.from_numpy(state).float().unsqueeze(0).to(torch.device("cpu"))
+            state = torch.from_numpy(state).float().unsqueeze(0).to(self.device)
             distb = self.pi.qnetwork_local(state)
             action = np.argmax(distb.cpu().data.numpy())
         elif self.expert_algo == "default":

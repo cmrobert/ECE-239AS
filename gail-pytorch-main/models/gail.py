@@ -12,6 +12,15 @@ if torch.cuda.is_available():
 else:
     from torch import FloatTensor
 
+def rawRewardDict2vec(reward_dict, agent_idx):
+    # Function to create a reward vector for a specific agent from a reward dictionary
+    #   Used for rewards provided by Flatland (even for single agent)
+    reward_vec = []
+    len_seq = len(reward_dict)  # reward_dict is a list of dictionaries; need list of values
+    for reward_i in range(len_seq):
+        reward_vec.append(reward_dict[reward_i][agent_idx])
+    return reward_vec
+
 
 class GAIL:
     def __init__(
@@ -49,10 +58,15 @@ class GAIL:
     def act(self, state):
         self.pi.eval()
 
+        if self.env_type == "flatland":
+            #import pdb; pdb.set_trace()
+            state = torch.from_numpy(state).float().unsqueeze(0).to(self.device)
         state = FloatTensor(state)
         distb = self.pi(state)
 
+        #action = distb.sample().detach().cpu().numpy()
         action = distb.sample().detach().cpu().numpy()
+        action = np.argmax(action)
 
         return action
 
@@ -87,6 +101,8 @@ class GAIL:
         exp_acts = []
 
         steps = 0
+
+        print("\nStarting GAIL training...")
         while steps < num_steps_per_iter:
             ep_obs = []
             ep_rwds = []
@@ -111,6 +127,7 @@ class GAIL:
                         if info['action_required'][agent]:
                             act = expert.act(agent_obs[agent])
                             action_dict.update({agent: act})
+                            #import pdb; pdb.set_trace()
                 else:
                     act = expert.act(ob)
 
@@ -139,9 +156,13 @@ class GAIL:
                 exp_rwd_iter.append(np.sum(ep_rwds))
 
             ep_obs = FloatTensor(ep_obs)
-            ep_rwds = FloatTensor(ep_rwds)
+            if self.env_type == "flatland":
+                #import pdb; pdb.set_trace()
+                ep_rwds = FloatTensor(rawRewardDict2vec(ep_rwds, 0))
+            else:
+                ep_rwds = FloatTensor(ep_rwds)
 
-        exp_rwd_mean = np.mean(exp_rwd_iter)
+        exp_rwd_mean = np.mean(rawRewardDict2vec(exp_rwd_iter, 0))
         print(
             "Expert Reward Mean: {}".format(exp_rwd_mean)
         )
@@ -171,17 +192,27 @@ class GAIL:
 
                 t = 0
                 done = False
+                action_dict = dict()
 
                 if self.env_type == "flatland":
                     ob_all, info = env.reset(self.regenerate_rail, self.regenerate_schedule)
                     for agent in env.get_agent_handles():
                         if ob_all[agent]:
-                            ob = ob_all[agent]
+                            agent_obs[agent] = normalize_observation(ob_all[agent], self.observation_tree_depth,
+                                                                    observation_radius=self.observation_radius)
+                    ob = agent_obs[agent]
                 else:
                     ob = env.reset()
 
                 while not done and steps < num_steps_per_iter:
-                    act = self.act(ob)
+                    if self.env_type == "flatland":
+                        for agent in env.get_agent_handles():
+                            if info['action_required'][agent]:
+                                act = self.act(ob)
+                                action_dict.update({agent: act})
+                                #import pdb; pdb.set_trace()
+                    else:
+                        act = self.act(ob)
 
                     ep_obs.append(ob)
                     obs.append(ob)
@@ -191,7 +222,10 @@ class GAIL:
 
                     if render:
                         env.render()
-                    ob, rwd, done, info = env.step(act)
+                    if self.env_type == "flatland":
+                        ob, rwd, done, info = env.step(action_dict)
+                    else:
+                        ob, rwd, done, info = env.step(act)
 
                     ep_rwds.append(rwd)
                     ep_gms.append(gae_gamma ** t)
@@ -205,11 +239,15 @@ class GAIL:
                             break
 
                 if done:
+                    import pdb; pdb.set_trace()
                     rwd_iter.append(np.sum(ep_rwds))
 
                 ep_obs = FloatTensor(ep_obs)
                 ep_acts = FloatTensor(np.array(ep_acts))
-                ep_rwds = FloatTensor(ep_rwds)
+                if self.env_type == "flatland":
+                    ep_rwds = FloatTensor(rawRewardDict2vec(ep_rwds, 0))
+                else:
+                    ep_rwds = FloatTensor(ep_rwds)
                 # ep_disc_rwds = FloatTensor(ep_disc_rwds)
                 ep_gms = FloatTensor(ep_gms)
                 ep_lmbs = FloatTensor(ep_lmbs)
@@ -243,6 +281,8 @@ class GAIL:
 
                 gms.append(ep_gms)
 
+            import pdb; pdb.set_trace()
+            rwd_iter = rawRewardDict2vec(rwd_iter, 0)
             rwd_iter_means.append(np.mean(rwd_iter))
             print(
                 "Iterations: {},   Reward Mean: {}"
@@ -262,6 +302,7 @@ class GAIL:
             if torch.cuda.is_available():
                 advs.to(torch.device("cuda:0"))    
            
+            #import pdb; pdb.set_trace()
             self.d.train()
             exp_scores = self.d.get_logits(exp_obs, exp_acts)
             nov_scores = self.d.get_logits(obs, acts)
