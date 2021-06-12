@@ -239,7 +239,7 @@ class GAIL:
                             break
 
                 if done:
-                    import pdb; pdb.set_trace()
+                    #import pdb; pdb.set_trace()
                     rwd_iter.append(np.sum(ep_rwds))
 
                 ep_obs = FloatTensor(ep_obs)
@@ -281,7 +281,8 @@ class GAIL:
 
                 gms.append(ep_gms)
 
-            import pdb; pdb.set_trace()
+            #import pdb; pdb.set_trace()
+            #print(rwd_iter)
             rwd_iter = rawRewardDict2vec(rwd_iter, 0)
             rwd_iter_means.append(np.mean(rwd_iter))
             print(
@@ -351,9 +352,11 @@ class GAIL:
             def L():
                 distb = self.pi(obs)
                 
+                #import pdb; pdb.set_trace()
+                acts_oh = torch.nn.functional.one_hot(acts.to(torch.int64), self.action_dim)
                 return (advs.to(self.device) * torch.exp(
-                            distb.log_prob(acts)
-                            - old_distb.log_prob(acts).detach()
+                            distb.log_prob(acts_oh)
+                            - old_distb.log_prob(acts_oh).detach()
                         )).mean()
 
             def kld():
@@ -400,7 +403,8 @@ class GAIL:
                 g, s, Hs, max_kl, L, kld, old_params, self.pi
             )
 
-            disc_causal_entropy = ((-1) * gms * self.pi(obs).log_prob(acts))\
+            acts_oh = torch.nn.functional.one_hot(acts.to(torch.int64), self.action_dim)
+            disc_causal_entropy = ((-1) * gms * self.pi(obs).log_prob(acts_oh))\
                 .mean()
             grad_disc_causal_entropy = get_flat_grads(
                 disc_causal_entropy, self.pi
